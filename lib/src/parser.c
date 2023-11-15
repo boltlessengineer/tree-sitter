@@ -1934,10 +1934,15 @@ TSTree *ts_parser_parse(
           ts_stack_position(self->stack, version).extent.column
         );
 
+        uint32_t local_last_pos = ts_stack_position(self->stack, version).bytes;
         if (!ts_parser__advance(self, version, allow_node_reuse)) return NULL;
         LOG_STACK();
 
         position = ts_stack_position(self->stack, version).bytes;
+        const bool parsed_zero_length = position == local_last_pos;
+        if (parsed_zero_length) {
+          break;
+        }
         if (position > last_position || (version > 0 && position == last_position)) {
           last_position = position;
           break;
