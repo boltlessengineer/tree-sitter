@@ -618,23 +618,6 @@ void ts_subtree_release(SubtreePool *pool, Subtree self) {
   }
 }
 
-int ts_subtree_compare(Subtree left, Subtree right) {
-  if (ts_subtree_symbol(left) < ts_subtree_symbol(right)) return -1;
-  if (ts_subtree_symbol(right) < ts_subtree_symbol(left)) return 1;
-  if (ts_subtree_child_count(left) < ts_subtree_child_count(right)) return -1;
-  if (ts_subtree_child_count(right) < ts_subtree_child_count(left)) return 1;
-  for (uint32_t i = 0, n = ts_subtree_child_count(left); i < n; i++) {
-    Subtree left_child = ts_subtree_children(left)[i];
-    Subtree right_child = ts_subtree_children(right)[i];
-    switch (ts_subtree_compare(left_child, right_child)) {
-      case -1: return -1;
-      case 1: return 1;
-      default: break;
-    }
-  }
-  return 0;
-}
-
 static inline void ts_subtree_set_has_changes(MutableSubtree *self) {
   if (self->data.is_inline) {
     self->data.has_changes = true;

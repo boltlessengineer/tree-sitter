@@ -713,6 +713,35 @@ static Subtree ts_parser__reuse_node(
   return NULL_SUBTREE;
 }
 
+int ts_subtree_compare(TSParser *self, Subtree left, Subtree right) {
+  if (ts_subtree_symbol(left) < ts_subtree_symbol(right)) {
+      LOG("select_earlier symbol:%s, over_symbol:%s", TREE_NAME(left), TREE_NAME(right));
+      return -1;
+  }
+  if (ts_subtree_symbol(right) < ts_subtree_symbol(left)) {
+      LOG("select_earlier symbol:%s, over_symbol:%s", TREE_NAME(right), TREE_NAME(left));
+      return 1;
+  }
+  if (ts_subtree_child_count(left) < ts_subtree_child_count(right)) {
+      LOG("select_less child symbol:%s, over_symbol:%s", TREE_NAME(left), TREE_NAME(right));
+      return -1;
+  }
+  if (ts_subtree_child_count(right) < ts_subtree_child_count(left)) {
+      LOG("select_less child symbol:%s, over_symbol:%s", TREE_NAME(right), TREE_NAME(left));
+      return 1;
+  }
+  for (uint32_t i = 0, n = ts_subtree_child_count(left); i < n; i++) {
+    Subtree left_child = ts_subtree_children(left)[i];
+    Subtree right_child = ts_subtree_children(right)[i];
+    switch (ts_subtree_compare(self, left_child, right_child)) {
+      case -1: return -1;
+      case 1: return 1;
+      default: break;
+    }
+  }
+  return 0;
+}
+
 // Determine if a given tree should be replaced by an alternative tree.
 //
 // The decision is based on the trees' error costs (if any), their dynamic precedence,
@@ -747,14 +776,12 @@ static bool ts_parser__select_tree(TSParser *self, Subtree left, Subtree right) 
 
   if (ts_subtree_error_cost(left) > 0) return true;
 
-  int comparison = ts_subtree_compare(left, right);
+  int comparison = ts_subtree_compare(self, left, right);
   switch (comparison) {
     case -1:
-      LOG("select_earlier symbol:%s, over_symbol:%s", TREE_NAME(left), TREE_NAME(right));
       return false;
       break;
     case 1:
-      LOG("select_earlier symbol:%s, over_symbol:%s", TREE_NAME(right), TREE_NAME(left));
       return true;
     default:
       LOG("select_existing symbol:%s, over_symbol:%s", TREE_NAME(left), TREE_NAME(right));
@@ -831,6 +858,7 @@ static StackVersion ts_parser__reduce(
   // children.
   StackSliceArray pop = ts_stack_pop_count(self->stack, version, count);
   uint32_t removed_version_count = 0;
+  LOG("pop.size:%u, version:%u, prec:%d", pop.size, version, dynamic_precedence);
   for (uint32_t i = 0; i < pop.size; i++) {
     StackSlice slice = pop.contents[i];
     StackVersion slice_version = slice.version - removed_version_count;
@@ -915,6 +943,7 @@ static StackVersion ts_parser__reduce(
     for (StackVersion j = 0; j < slice_version; j++) {
       if (j == version) continue;
       if (ts_stack_merge(self->stack, j, slice_version)) {
+        LOG("remove by merge");
         removed_version_count++;
         break;
       }
@@ -1044,6 +1073,7 @@ static bool ts_parser__do_all_potential_reductions(
     for (uint32_t j = 0; j < self->reduce_actions.size; j++) {
       ReduceAction action = self->reduce_actions.contents[j];
 
+      LOG("reduce2");
       reduction_version = ts_parser__reduce(
         self, version, action.symbol, action.count,
         action.dynamic_precedence, action.production_id,
@@ -1504,6 +1534,7 @@ static bool ts_parser__advance(
           bool is_fragile = table_entry.action_count > 1;
           bool end_of_non_terminal_extra = lookahead.ptr == NULL;
           LOG("reduce sym:%s, child_count:%u", SYM_NAME(action.reduce.symbol), action.reduce.child_count);
+          LOG("reduce1");
           StackVersion reduction_version = ts_parser__reduce(
             self, version, action.reduce.symbol, action.reduce.child_count,
             action.reduce.dynamic_precedence, action.reduce.production_id,
@@ -1645,10 +1676,14 @@ static unsigned ts_parser__condense_stack(TSParser *self) {
     for (StackVersion j = 0; j < i; j++) {
       ErrorStatus status_j = ts_parser__version_status(self, j);
 
+      bool local_made_changes = false;
       switch (ts_parser__compare_versions(self, status_j, status_i)) {
         case ErrorComparisonTakeLeft:
+          LOG("ErrorComparisonTakeLeft")
           made_changes = true;
+          local_made_changes = true;
           ts_stack_remove_version(self->stack, i);
+          LOG("remove version")
           i--;
           j = i;
           break;
@@ -1656,15 +1691,20 @@ static unsigned ts_parser__condense_stack(TSParser *self) {
         case ErrorComparisonPreferLeft:
         case ErrorComparisonNone:
           if (ts_stack_merge(self->stack, j, i)) {
+            LOG("merge")
             made_changes = true;
+            local_made_changes = true;
             i--;
             j = i;
           }
           break;
 
         case ErrorComparisonPreferRight:
+          LOG("ErrorComparisonPreferRight")
           made_changes = true;
+          local_made_changes = true;
           if (ts_stack_merge(self->stack, j, i)) {
+            LOG("merge")
             i--;
             j = i;
           } else {
@@ -1673,11 +1713,18 @@ static unsigned ts_parser__condense_stack(TSParser *self) {
           break;
 
         case ErrorComparisonTakeRight:
+          LOG("ErrorComparisonTakeRight")
           made_changes = true;
+          local_made_changes = true;
           ts_stack_remove_version(self->stack, j);
+          LOG("remove version")
           i--;
           j--;
           break;
+      }
+      if (local_made_changes) {
+        LOG("made change")
+        LOG_STACK();
       }
     }
   }
@@ -1685,6 +1732,7 @@ static unsigned ts_parser__condense_stack(TSParser *self) {
   // Enfore a hard upper bound on the number of stack versions by
   // discarding the least promising versions.
   while (ts_stack_version_count(self->stack) > MAX_VERSION_COUNT) {
+    LOG("remove stack:%u", ts_stack_version_count(self->stack));
     ts_stack_remove_version(self->stack, MAX_VERSION_COUNT);
     made_changes = true;
   }
@@ -1703,6 +1751,7 @@ static unsigned ts_parser__condense_stack(TSParser *self) {
           ts_parser__handle_error(self, i, lookahead);
           has_unpaused_version = true;
         } else {
+          LOG("remove stack:%u", ts_stack_version_count(self->stack));
           ts_stack_remove_version(self->stack, i);
           i--;
           n--;
