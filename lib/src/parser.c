@@ -836,10 +836,15 @@ static bool ts_parser__select_tree(TSParser *self, Subtree left, Subtree right) 
   int comparison = ts_subtree_compare(left, right, &self->tree_pool);
   switch (comparison) {
     case -1:
+      LOG("select_earlier_child symbol:%s, over_symbol:%s", TREE_NAME(left), TREE_NAME(right));
+      return false;
+    case 1:
+      LOG("select_earlier_child symbol:%s, over_symbol:%s", TREE_NAME(right), TREE_NAME(left));
+      return true;
+    case -2:
       LOG("select_earlier symbol:%s, over_symbol:%s", TREE_NAME(left), TREE_NAME(right));
       return false;
-      break;
-    case 1:
+    case 2:
       LOG("select_earlier symbol:%s, over_symbol:%s", TREE_NAME(right), TREE_NAME(left));
       return true;
     default:

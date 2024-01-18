@@ -628,8 +628,8 @@ int ts_subtree_compare(Subtree left, Subtree right, SubtreePool *pool) {
     left = ts_subtree_from_mut(array_pop(&pool->tree_stack));
 
     int result = 0;
-    if (ts_subtree_symbol(left) < ts_subtree_symbol(right)) result = -1;
-    if (ts_subtree_symbol(right) < ts_subtree_symbol(left)) result = 1;
+    if (ts_subtree_symbol(left) < ts_subtree_symbol(right)) result = -2;
+    if (ts_subtree_symbol(right) < ts_subtree_symbol(left)) result = 2;
     if (ts_subtree_child_count(left) < ts_subtree_child_count(right)) result = -1;
     if (ts_subtree_child_count(right) < ts_subtree_child_count(left)) result = 1;
     if (result != 0) {
